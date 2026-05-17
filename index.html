@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Smart Focus Hub - مركز الإنتاجية الذكي: مؤقت بومودورو، إدارة المهام، متتبع العادات، إحصائيات." />
+  <meta name="theme-color" content="#6366f1" />
+  <title>Smart Focus Hub | مركز الإنتاجية الذكي</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AF%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">🎯</span>
+      <h1 class="brand-name" data-i18n="app_name">Smart Focus Hub</h1>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="pomodoro" role="tab">
+        <span class="tab-icon">⏱️</span>
+        <span data-i18n="tab_pomodoro">بومودورو</span>
+      </button>
+      <button class="tab" data-tab="tasks" role="tab">
+        <span class="tab-icon">✅</span>
+        <span data-i18n="tab_tasks">المهام</span>
+      </button>
+      <button class="tab" data-tab="habits" role="tab">
+        <span class="tab-icon">🔥</span>
+        <span data-i18n="tab_habits">العادات</span>
+      </button>
+      <button class="tab" data-tab="stats" role="tab">
+        <span class="tab-icon">📊</span>
+        <span data-i18n="tab_stats">الإحصائيات</span>
+      </button>
+    </nav>
+
+    <div class="topbar-actions">
+      <button id="lang-toggle" class="icon-btn" title="Language" aria-label="Toggle language">
+        <span id="lang-label">EN</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" title="Theme" aria-label="Toggle theme">
+        <span id="theme-icon">🌙</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- Pomodoro Section -->
+    <section id="pomodoro" class="panel active" role="tabpanel">
+      <div class="card pomodoro-card">
+        <div class="mode-switcher">
+          <button class="mode-btn active" data-mode="focus" data-duration="25">
+            <span data-i18n="mode_focus">تركيز</span>
+            <small>25:00</small>
+          </button>
+          <button class="mode-btn" data-mode="short" data-duration="5">
+            <span data-i18n="mode_short">استراحة قصيرة</span>
+            <small>05:00</small>
+          </button>
+          <button class="mode-btn" data-mode="long" data-duration="15">
+            <span data-i18n="mode_long">استراحة طويلة</span>
+            <small>15:00</small>
+          </button>
+        </div>
+
+        <div class="timer-wrapper">
+          <svg class="timer-ring" viewBox="0 0 240 240" aria-hidden="true">
+            <circle cx="120" cy="120" r="108" class="ring-bg" />
+            <circle cx="120" cy="120" r="108" class="ring-progress" id="ring-progress" />
+          </svg>
+          <div class="timer-display">
+            <div class="timer-time" id="timer-display">25:00</div>
+            <div class="timer-label" id="timer-label" data-i18n="ready_focus">جاهز للتركيز</div>
+          </div>
+        </div>
+
+        <div class="timer-controls">
+          <button class="btn btn-secondary" id="btn-reset" title="Reset">
+            <span>⏮</span>
+            <span data-i18n="btn_reset">إعادة</span>
+          </button>
+          <button class="btn btn-primary btn-large" id="btn-start">
+            <span id="btn-start-icon">▶</span>
+            <span id="btn-start-text" data-i18n="btn_start">ابدأ</span>
+          </button>
+          <button class="btn btn-secondary" id="btn-skip" title="Skip">
+            <span data-i18n="btn_skip">تخطّي</span>
+            <span>⏭</span>
+          </button>
+        </div>
+
+        <div class="pomodoro-meta">
+          <div class="meta-item">
+            <span class="meta-label" data-i18n="completed_today">جلسات اليوم</span>
+            <span class="meta-value" id="sessions-today">0</span>
+          </div>
+          <div class="meta-divider"></div>
+          <div class="meta-item">
+            <span class="meta-label" data-i18n="focus_minutes">دقائق التركيز</span>
+            <span class="meta-value" id="focus-minutes">0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card tip-card">
+        <h3>💡 <span data-i18n="tip_title">نصيحة اليوم</span></h3>
+        <p id="daily-tip" data-i18n="tip_default">ركز لمدة 25 دقيقة، ثم خذ استراحة 5 دقائق. هذه هي تقنية بومودورو التي تساعد على تحسين الإنتاجية.</p>
+      </div>
+    </section>
+
+    <!-- Tasks Section -->
+    <section id="tasks" class="panel" role="tabpanel">
+      <div class="card">
+        <div class="card-header">
+          <h2 data-i18n="tasks_title">قائمة المهام</h2>
+          <div class="task-stats">
+            <span class="badge badge-primary"><span id="tasks-active-count">0</span> <span data-i18n="active">نشطة</span></span>
+            <span class="badge"><span id="tasks-done-count">0</span> <span data-i18n="done">مكتملة</span></span>
+          </div>
+        </div>
+
+        <form id="task-form" class="task-form">
+          <input
+            type="text"
+            id="task-input"
+            class="input"
+            data-i18n-ph="task_placeholder"
+            placeholder="أضف مهمة جديدة..."
+            required
+            maxlength="200"
+          />
+          <select id="task-priority" class="select">
+            <option value="high" data-i18n="priority_high">عالية</option>
+            <option value="medium" selected data-i18n="priority_medium">متوسطة</option>
+            <option value="low" data-i18n="priority_low">منخفضة</option>
+          </select>
+          <button type="submit" class="btn btn-primary">
+            <span>+</span>
+            <span data-i18n="btn_add">إضافة</span>
+          </button>
+        </form>
+
+        <div class="task-filters">
+          <button class="chip active" data-filter="all" data-i18n="filter_all">الكل</button>
+          <button class="chip" data-filter="active" data-i18n="filter_active">نشطة</button>
+          <button class="chip" data-filter="done" data-i18n="filter_done">مكتملة</button>
+          <button class="chip chip-danger" id="clear-done" data-i18n="clear_done">حذف المكتملة</button>
+        </div>
+
+        <ul id="task-list" class="task-list"></ul>
+        <div id="task-empty" class="empty-state hidden">
+          <div class="empty-icon">📝</div>
+          <p data-i18n="no_tasks">لا توجد مهام بعد. أضف مهمتك الأولى!</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Habits Section -->
+    <section id="habits" class="panel" role="tabpanel">
+      <div class="card">
+        <div class="card-header">
+          <h2 data-i18n="habits_title">متتبع العادات</h2>
+          <span class="muted" id="habits-date"></span>
+        </div>
+
+        <form id="habit-form" class="task-form">
+          <input
+            type="text"
+            id="habit-input"
+            class="input"
+            data-i18n-ph="habit_placeholder"
+            placeholder="عادة جديدة (مثل: قراءة 30 دقيقة)..."
+            required
+            maxlength="80"
+          />
+          <button type="submit" class="btn btn-primary">
+            <span>+</span>
+            <span data-i18n="btn_add">إضافة</span>
+          </button>
+        </form>
+
+        <div id="habit-list" class="habit-list"></div>
+        <div id="habit-empty" class="empty-state hidden">
+          <div class="empty-icon">🌱</div>
+          <p data-i18n="no_habits">ابدأ بإضافة عاداتك اليومية لبنائها خطوة بخطوة.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section id="stats" class="panel" role="tabpanel">
+      <div class="stats-grid">
+        <div class="stat-card stat-purple">
+          <div class="stat-icon">⏱️</div>
+          <div class="stat-value" id="stat-total-sessions">0</div>
+          <div class="stat-label" data-i18n="stat_sessions">إجمالي الجلسات</div>
+        </div>
+        <div class="stat-card stat-green">
+          <div class="stat-icon">⏳</div>
+          <div class="stat-value" id="stat-total-minutes">0</div>
+          <div class="stat-label" data-i18n="stat_minutes">دقائق التركيز</div>
+        </div>
+        <div class="stat-card stat-blue">
+          <div class="stat-icon">✅</div>
+          <div class="stat-value" id="stat-tasks-done">0</div>
+          <div class="stat-label" data-i18n="stat_tasks">مهام مكتملة</div>
+        </div>
+        <div class="stat-card stat-orange">
+          <div class="stat-icon">🔥</div>
+          <div class="stat-value" id="stat-streak">0</div>
+          <div class="stat-label" data-i18n="stat_streak">أطول سلسلة (يوم)</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 data-i18n="weekly_focus">جلسات التركيز - آخر 7 أيام</h2>
+        </div>
+        <div class="chart" id="weekly-chart" aria-label="Weekly focus chart"></div>
+      </div>
+
+      <div class="card danger-card">
+        <h3 data-i18n="danger_zone">المنطقة الحساسة</h3>
+        <p data-i18n="danger_desc">سيتم حذف جميع المهام والعادات والإحصائيات.</p>
+        <button class="btn btn-danger" id="btn-reset-all" data-i18n="reset_all">إعادة تعيين كل شيء</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Audio for timer end (programmatic via Web Audio API) -->
+  <script src="app.js"></script>
+</body>
+</html>
