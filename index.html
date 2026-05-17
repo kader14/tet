@@ -3,14 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Smart Focus Hub - مركز الإنتاجية الذكي: مؤقت بومودورو، إدارة المهام، متتبع العادات، إحصائيات." />
+  <meta name="description" content="Smart Focus Hub - مركز الإنتاجية الذكي: مؤقت بومودورو، إدارة المهام، متتبع العادات، أهداف يومية، إحصائيات." />
   <meta name="theme-color" content="#6366f1" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Focus Hub" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+
   <title>Smart Focus Hub | مركز الإنتاجية الذكي</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AF%3C/text%3E%3C/svg%3E" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
 </head>
 <body>
   <!-- Top Bar -->
@@ -108,6 +116,51 @@
         </div>
       </div>
 
+      <!-- Daily Goals Card -->
+      <div class="card goals-card">
+        <div class="card-header">
+          <h2>🎯 <span data-i18n="goals_title">أهداف اليوم</span></h2>
+          <button class="btn btn-secondary btn-small" id="btn-edit-goals">
+            <span>⚙</span>
+            <span data-i18n="btn_edit">تعديل</span>
+          </button>
+        </div>
+
+        <div class="goal-row">
+          <div class="goal-info">
+            <span class="goal-label">⏱️ <span data-i18n="goal_sessions">جلسات التركيز</span></span>
+            <span class="goal-numbers"><span id="goal-sessions-current">0</span> / <span id="goal-sessions-target">4</span></span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill progress-purple" id="goal-sessions-bar"></div>
+          </div>
+        </div>
+
+        <div class="goal-row">
+          <div class="goal-info">
+            <span class="goal-label">⏳ <span data-i18n="goal_minutes">دقائق التركيز</span></span>
+            <span class="goal-numbers"><span id="goal-minutes-current">0</span> / <span id="goal-minutes-target">120</span></span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill progress-green" id="goal-minutes-bar"></div>
+          </div>
+        </div>
+
+        <div class="goal-row">
+          <div class="goal-info">
+            <span class="goal-label">✅ <span data-i18n="goal_tasks">المهام المكتملة</span></span>
+            <span class="goal-numbers"><span id="goal-tasks-current">0</span> / <span id="goal-tasks-target">5</span></span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill progress-blue" id="goal-tasks-bar"></div>
+          </div>
+        </div>
+
+        <div id="goals-celebration" class="goals-celebration hidden">
+          🎉 <span data-i18n="goals_done">أحسنت! حققت كل أهداف اليوم</span>
+        </div>
+      </div>
+
       <div class="card tip-card">
         <h3>💡 <span data-i18n="tip_title">نصيحة اليوم</span></h3>
         <p id="daily-tip" data-i18n="tip_default">ركز لمدة 25 دقيقة، ثم خذ استراحة 5 دقائق. هذه هي تقنية بومودورو التي تساعد على تحسين الإنتاجية.</p>
@@ -135,6 +188,16 @@
             required
             maxlength="200"
           />
+          <input
+            type="text"
+            id="task-category"
+            class="input input-narrow"
+            data-i18n-ph="category_placeholder"
+            placeholder="فئة (اختياري)"
+            maxlength="20"
+            list="categories-list"
+          />
+          <datalist id="categories-list"></datalist>
           <select id="task-priority" class="select">
             <option value="high" data-i18n="priority_high">عالية</option>
             <option value="medium" selected data-i18n="priority_medium">متوسطة</option>
@@ -152,6 +215,8 @@
           <button class="chip" data-filter="done" data-i18n="filter_done">مكتملة</button>
           <button class="chip chip-danger" id="clear-done" data-i18n="clear_done">حذف المكتملة</button>
         </div>
+
+        <div class="category-filters" id="category-filters"></div>
 
         <ul id="task-list" class="task-list"></ul>
         <div id="task-empty" class="empty-state hidden">
@@ -225,6 +290,25 @@
         <div class="chart" id="weekly-chart" aria-label="Weekly focus chart"></div>
       </div>
 
+      <!-- Backup / Restore Card -->
+      <div class="card">
+        <div class="card-header">
+          <h2>💾 <span data-i18n="backup_title">النسخ الاحتياطي</span></h2>
+        </div>
+        <p class="muted" data-i18n="backup_desc">قم بتصدير بياناتك إلى ملف JSON أو استيرادها لاستعادتها على جهاز آخر.</p>
+        <div class="backup-actions">
+          <button class="btn btn-secondary" id="btn-export">
+            <span>⬇</span>
+            <span data-i18n="btn_export">تصدير JSON</span>
+          </button>
+          <button class="btn btn-secondary" id="btn-import">
+            <span>⬆</span>
+            <span data-i18n="btn_import">استيراد JSON</span>
+          </button>
+          <input type="file" id="import-file" accept="application/json,.json" hidden />
+        </div>
+      </div>
+
       <div class="card danger-card">
         <h3 data-i18n="danger_zone">المنطقة الحساسة</h3>
         <p data-i18n="danger_desc">سيتم حذف جميع المهام والعادات والإحصائيات.</p>
@@ -233,10 +317,43 @@
     </section>
   </main>
 
+  <!-- Goals Edit Dialog -->
+  <div class="dialog-overlay hidden" id="goals-dialog">
+    <div class="dialog">
+      <div class="dialog-header">
+        <h3>🎯 <span data-i18n="goals_edit_title">تعديل أهداف اليوم</span></h3>
+        <button class="icon-btn" id="goals-dialog-close" aria-label="close">✕</button>
+      </div>
+      <form id="goals-form" class="dialog-body">
+        <label class="field">
+          <span data-i18n="goal_sessions">جلسات التركيز</span>
+          <input type="number" id="goal-sessions-input" class="input" min="1" max="20" value="4" required />
+        </label>
+        <label class="field">
+          <span data-i18n="goal_minutes">دقائق التركيز</span>
+          <input type="number" id="goal-minutes-input" class="input" min="5" max="600" step="5" value="120" required />
+        </label>
+        <label class="field">
+          <span data-i18n="goal_tasks">المهام المكتملة</span>
+          <input type="number" id="goal-tasks-input" class="input" min="1" max="50" value="5" required />
+        </label>
+        <div class="dialog-actions">
+          <button type="button" class="btn btn-secondary" id="goals-dialog-cancel" data-i18n="btn_cancel">إلغاء</button>
+          <button type="submit" class="btn btn-primary" data-i18n="btn_save">حفظ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast notification -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <!-- Audio for timer end (programmatic via Web Audio API) -->
+  <!-- Install PWA prompt -->
+  <button id="install-btn" class="install-btn hidden" type="button">
+    <span>📲</span>
+    <span data-i18n="install_app">تثبيت التطبيق</span>
+  </button>
+
   <script src="app.js"></script>
 </body>
 </html>
