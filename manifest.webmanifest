@@ -1,0 +1,42 @@
+{
+  "name": "Smart Focus Hub - مركز الإنتاجية الذكي",
+  "short_name": "Focus Hub",
+  "description": "All-in-one productivity hub: Pomodoro timer, tasks, habits, daily goals, and stats. Works offline.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1020",
+  "theme_color": "#6366f1",
+  "lang": "ar",
+  "dir": "auto",
+  "categories": ["productivity", "lifestyle", "utilities"],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Start Pomodoro",
+      "short_name": "Pomodoro",
+      "url": "./#pomodoro",
+      "description": "Jump straight to the focus timer"
+    },
+    {
+      "name": "View Tasks",
+      "short_name": "Tasks",
+      "url": "./#tasks",
+      "description": "Manage your task list"
+    }
+  ]
+}
