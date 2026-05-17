@@ -1,7 +1,8 @@
 /* ==========================================================================
    Smart Focus Hub — Application Logic
-   Pomodoro + Tasks (with categories) + Habits + Stats + Daily Goals
-   + JSON Export/Import + PWA Service Worker + i18n + Theme + LocalStorage
+   Pomodoro + Tasks (with categories) + Habits (with heatmap) + Stats + Goals
+   + JSON Backup + PWA + Notifications + Wake Lock + Drift-free Timer
+   + i18n + Theme + LocalStorage
    ========================================================================== */
 
 (() => {
@@ -80,6 +81,9 @@
       streak: 'سلسلة',
       day: 'يوم',
       total: 'الإجمالي',
+      heatmap_less: 'أقل',
+      heatmap_more: 'أكثر',
+      heatmap_aria: 'سجل آخر 26 أسبوعاً',
 
       stat_sessions: 'إجمالي الجلسات',
       stat_minutes: 'دقائق التركيز',
@@ -107,6 +111,17 @@
       install_app: 'تثبيت التطبيق',
       installed: 'تم تثبيت التطبيق على جهازك',
       offline_ready: 'التطبيق جاهز للعمل بدون إنترنت',
+
+      notif_enable: 'تفعيل الإشعارات',
+      notif_disable: 'تعطيل الإشعارات',
+      notif_enabled: 'تم تفعيل الإشعارات',
+      notif_disabled: 'تم تعطيل الإشعارات',
+      notif_blocked: 'الإشعارات محجوبة. يرجى السماح بها من إعدادات المتصفح.',
+      notif_title_session: 'انتهت جلسة التركيز',
+      notif_body_session: 'أحسنت! حان وقت أخذ استراحة قصيرة.',
+      notif_title_break: 'انتهت الاستراحة',
+      notif_body_break: 'حان وقت العودة للتركيز 💪',
+
       days_short: ['أحد', 'إثن', 'ثلا', 'أرب', 'خمي', 'جمع', 'سبت'],
     },
     en: {
@@ -180,6 +195,9 @@
       streak: 'streak',
       day: 'day',
       total: 'total',
+      heatmap_less: 'Less',
+      heatmap_more: 'More',
+      heatmap_aria: 'Last 26 weeks history',
 
       stat_sessions: 'Total sessions',
       stat_minutes: 'Focus minutes',
@@ -207,13 +225,24 @@
       install_app: 'Install app',
       installed: 'App installed on your device',
       offline_ready: 'App ready to work offline',
+
+      notif_enable: 'Enable notifications',
+      notif_disable: 'Disable notifications',
+      notif_enabled: 'Notifications enabled',
+      notif_disabled: 'Notifications disabled',
+      notif_blocked: 'Notifications are blocked. Please allow them in your browser settings.',
+      notif_title_session: 'Focus session complete',
+      notif_body_session: "Nice work! Time for a short break.",
+      notif_title_break: 'Break is over',
+      notif_body_break: 'Time to focus again 💪',
+
       days_short: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
     },
   };
 
   // ------------------------------ State -----------------------------
   const STORAGE_KEY = 'smart-focus-hub:v2';
-  const SCHEMA_VERSION = 2;
+  const SCHEMA_VERSION = 3;
 
   const defaultState = {
     schemaVersion: SCHEMA_VERSION,
@@ -221,25 +250,23 @@
     theme: 'light',
     tasks: [],
     habits: [],
-    sessions: {},          // { 'YYYY-MM-DD': { sessions: n, minutes: m } }
+    sessions: {},
     totalSessions: 0,
     totalMinutes: 0,
     tasksCompleted: 0,
     activeFilter: 'all',
     activeCategory: 'all',
     goals: { sessions: 4, minutes: 120, tasks: 5 },
-    tasksCompletedByDate: {}, // { 'YYYY-MM-DD': n } — for goal tracking
+    tasksCompletedByDate: {},
+    notificationsEnabled: false,
   };
 
   let state = loadState();
 
   function loadState() {
     try {
-      // Try v2 first
       let raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return { ...defaultState, ...JSON.parse(raw) };
-
-      // Migrate from v1 if present
+      if (raw) return { ...defaultState, ...JSON.parse(raw), schemaVersion: SCHEMA_VERSION };
       const v1 = localStorage.getItem('smart-focus-hub:v1');
       if (v1) {
         const parsed = JSON.parse(v1);
@@ -254,9 +281,7 @@
   }
 
   function saveState() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {/* ignore quota */}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {/* quota */}
   }
 
   // ----------------------------- Helpers ----------------------------
@@ -282,7 +307,6 @@
   function uid() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   }
-
   function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 
   // ------------------------- Theme & Language -----------------------
@@ -305,7 +329,6 @@
       el.setAttribute('placeholder', t(key));
     });
 
-    // re-render dynamic UI
     renderTasks();
     renderHabits();
     renderStats();
@@ -314,6 +337,7 @@
     updateStartButton();
     rotateTip();
     updateTodayDate();
+    updateNotifButton();
   }
 
   // ----------------------------- Tabs -------------------------------
@@ -324,25 +348,134 @@
         $$('.tab').forEach((b) => b.classList.toggle('active', b === btn));
         $$('.panel').forEach((p) => p.classList.toggle('active', p.id === tab));
         if (tab === 'stats') renderStats();
+        if (tab === 'habits') renderHabits();
       });
     });
   }
 
+  // ---------------------- Wake Lock (screen) ------------------------
+  let wakeLock = null;
+  async function acquireWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch {/* user dismissed or unsupported */}
+  }
+  function releaseWakeLock() {
+    if (!wakeLock) return;
+    try { wakeLock.release(); } catch {/* ignore */}
+    wakeLock = null;
+  }
+
+  // ---------------------- Notifications -----------------------------
+  async function fireNotification(title, body) {
+    if (!state.notificationsEnabled) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(title, {
+          body,
+          icon: 'icon.svg',
+          badge: 'icon.svg',
+          tag: 'sfh-timer',
+          renotify: true,
+          lang: state.lang,
+          dir: state.lang === 'ar' ? 'rtl' : 'ltr',
+          data: { url: location.pathname + '#pomodoro' },
+        });
+      } else {
+        new Notification(title, { body });
+      }
+    } catch {
+      try { new Notification(title, { body }); } catch {/* ignore */}
+    }
+  }
+
+  function updateNotifButton() {
+    const btn = $('#notif-toggle');
+    if (!btn) return;
+    const supported = 'Notification' in window;
+    if (!supported) { btn.classList.add('hidden'); return; }
+    btn.classList.remove('hidden');
+
+    const enabled = state.notificationsEnabled && Notification.permission === 'granted';
+    btn.querySelector('.notif-icon').textContent = enabled ? '🔔' : '🔕';
+    btn.setAttribute('title', enabled ? t('notif_disable') : t('notif_enable'));
+    btn.setAttribute('aria-label', enabled ? t('notif_disable') : t('notif_enable'));
+    btn.classList.toggle('active', enabled);
+  }
+
+  async function toggleNotifications() {
+    if (!('Notification' in window)) return;
+
+    if (state.notificationsEnabled && Notification.permission === 'granted') {
+      state.notificationsEnabled = false;
+      saveState();
+      updateNotifButton();
+      showToast(t('notif_disabled'));
+      return;
+    }
+
+    if (Notification.permission === 'denied') {
+      showToast(t('notif_blocked'));
+      return;
+    }
+
+    let perm = Notification.permission;
+    if (perm === 'default') {
+      try { perm = await Notification.requestPermission(); } catch { perm = 'denied'; }
+    }
+    if (perm === 'granted') {
+      state.notificationsEnabled = true;
+      saveState();
+      updateNotifButton();
+      showToast(t('notif_enabled'));
+    } else {
+      showToast(t('notif_blocked'));
+    }
+  }
+
+  function setupNotifButton() {
+    const btn = $('#notif-toggle');
+    if (!btn) return;
+    btn.addEventListener('click', toggleNotifications);
+    updateNotifButton();
+  }
+
   // --------------------------- Pomodoro -----------------------------
+  // Drift-free: timer state is anchored to Date.now() via `endsAt`.
+  // While running, every tick recomputes `remaining = endsAt - now`.
+  // While paused, `pausedRemainingMs` holds the snapshot.
   const Timer = (() => {
     let mode = 'focus';
     let totalSec = 25 * 60;
-    let remaining = totalSec;
+    let endsAt = null;          // ms timestamp
+    let pausedRemainingMs = null;
     let intervalId = null;
     let running = false;
 
     const RING_LEN = 2 * Math.PI * 108;
+    const TICK_MS = 250;        // sub-second updates for smoother ring
+
+    function getRemainingSec() {
+      if (running && endsAt != null) {
+        return Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      }
+      if (pausedRemainingMs != null) {
+        return Math.max(0, Math.ceil(pausedRemainingMs / 1000));
+      }
+      return totalSec;
+    }
 
     function setMode(newMode, durationMin) {
       stop();
       mode = newMode;
       totalSec = durationMin * 60;
-      remaining = totalSec;
+      endsAt = null;
+      pausedRemainingMs = null;
       $$('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === newMode));
       $('.timer-wrapper').classList.toggle('break', newMode !== 'focus');
       render();
@@ -351,16 +484,25 @@
 
     function start() {
       if (running) { pause(); return; }
+      const remainingMs = pausedRemainingMs ?? totalSec * 1000;
+      endsAt = Date.now() + remainingMs;
+      pausedRemainingMs = null;
       running = true;
       updateStartButton();
       $('#timer-label').textContent = mode === 'focus' ? t('focus_running') : t('break_running');
-      intervalId = setInterval(tick, 1000);
+      intervalId = setInterval(tick, TICK_MS);
+      if (mode === 'focus') acquireWakeLock();
+      render();
     }
 
     function pause() {
+      if (!running) return;
+      pausedRemainingMs = Math.max(0, (endsAt ?? Date.now()) - Date.now());
+      endsAt = null;
       running = false;
       clearInterval(intervalId);
       intervalId = null;
+      releaseWakeLock();
       updateStartButton();
       $('#timer-label').textContent = t('paused');
     }
@@ -369,12 +511,14 @@
       running = false;
       clearInterval(intervalId);
       intervalId = null;
+      releaseWakeLock();
       updateStartButton();
     }
 
     function reset() {
       stop();
-      remaining = totalSec;
+      endsAt = null;
+      pausedRemainingMs = null;
       render();
       updateTimerLabel();
     }
@@ -385,14 +529,15 @@
     }
 
     function tick() {
-      remaining--;
+      const remaining = getRemainingSec();
       if (remaining <= 0) { complete(true); return; }
       render();
     }
 
     function complete(natural) {
       stop();
-      remaining = totalSec;
+      endsAt = null;
+      pausedRemainingMs = null;
       if (natural && mode === 'focus') {
         state.totalSessions += 1;
         state.totalMinutes += Math.round(totalSec / 60);
@@ -403,11 +548,13 @@
         saveState();
         playBeep();
         showToast(t('session_done'));
+        fireNotification(t('notif_title_session'), t('notif_body_session'));
         const shortBtn = document.querySelector('[data-mode="short"]');
         setMode('short', parseInt(shortBtn.dataset.duration, 10));
       } else if (natural) {
         playBeep();
         showToast(t('break_done'));
+        fireNotification(t('notif_title_break'), t('notif_body_break'));
         const focusBtn = document.querySelector('[data-mode="focus"]');
         setMode('focus', parseInt(focusBtn.dataset.duration, 10));
       } else {
@@ -419,14 +566,22 @@
     }
 
     function render() {
+      const remaining = getRemainingSec();
       const m = Math.floor(remaining / 60);
       const s = remaining % 60;
       $('#timer-display').textContent =
         `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
       const ring = $('#ring-progress');
       ring.style.strokeDasharray = String(RING_LEN);
-      const progress = remaining / totalSec;
-      ring.style.strokeDashoffset = String(RING_LEN * (1 - progress));
+
+      // Use sub-second progress for smooth ring, but only when running
+      let frac;
+      if (running && endsAt != null) {
+        frac = Math.max(0, Math.min(1, (endsAt - Date.now()) / (totalSec * 1000)));
+      } else {
+        frac = remaining / totalSec;
+      }
+      ring.style.strokeDashoffset = String(RING_LEN * (1 - frac));
       document.title = running
         ? `${$('#timer-display').textContent} • ${t('app_name')}`
         : `${t('app_name')}`;
@@ -477,6 +632,24 @@
         Timer.start();
       }
     });
+
+    // Re-sync on visibility change: timer never drifts, but the rendered
+    // value may be stale; also re-acquire wake lock (browsers release it
+    // when the page goes hidden).
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      Timer.render();
+      if (Timer.running && Timer.mode === 'focus') acquireWakeLock();
+    });
+
+    // Re-sync on focus too (covers some mobile cases)
+    window.addEventListener('focus', () => {
+      Timer.render();
+      if (Timer.running && Timer.mode === 'focus') acquireWakeLock();
+    });
+
+    // Release wake lock if the user closes the tab
+    window.addEventListener('pagehide', releaseWakeLock);
 
     Timer.setMode('focus', 25);
     updateTodayMeta();
@@ -619,7 +792,6 @@
     wrap.innerHTML = '';
 
     if (counts.size === 0) {
-      // ensure activeCategory is reset if none exist
       if (state.activeCategory !== 'all') {
         state.activeCategory = 'all';
         saveState();
@@ -627,7 +799,6 @@
       return;
     }
 
-    // "All" chip
     const allChip = document.createElement('button');
     allChip.className = 'chip chip-category' + (state.activeCategory === 'all' ? ' active' : '');
     allChip.innerHTML = `<span>${t('cat_all')}</span><span class="chip-count">${state.tasks.length}</span>`;
@@ -638,7 +809,6 @@
     });
     wrap.appendChild(allChip);
 
-    // Sorted category chips
     [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([cat, n]) => {
       const chip = document.createElement('button');
       chip.className = 'chip chip-category' + (state.activeCategory === cat ? ' active' : '');
@@ -651,7 +821,6 @@
       wrap.appendChild(chip);
     });
 
-    // Update datalist (suggestions)
     const list = $('#categories-list');
     list.innerHTML = '';
     [...counts.keys()].forEach((cat) => {
@@ -762,26 +931,127 @@
       const div = document.createElement('div');
       div.className = 'habit-item' + (checked ? ' checked' : '');
       div.innerHTML = `
-        <button class="habit-check" aria-label="check">${checked ? '✓' : ''}</button>
-        <div class="habit-info">
-          <div class="habit-name"></div>
-          <div class="habit-meta">
-            <span class="habit-streak">🔥 ${streak} ${t('day')} (${t('streak')})</span>
-            <span>📅 ${habit.history.length} ${t('total')}</span>
+        <div class="habit-row">
+          <button class="habit-check" aria-label="check">${checked ? '✓' : ''}</button>
+          <div class="habit-info">
+            <div class="habit-name"></div>
+            <div class="habit-meta">
+              <span class="habit-streak">🔥 ${streak} ${t('day')} (${t('streak')})</span>
+              <span>📅 ${habit.history.length} ${t('total')}</span>
+            </div>
           </div>
+          <button class="habit-delete" aria-label="delete">✕</button>
         </div>
-        <button class="habit-delete" aria-label="delete">✕</button>
+        <div class="habit-heatmap" aria-label="${t('heatmap_aria')}"></div>
       `;
       div.querySelector('.habit-name').textContent = habit.name;
 
       div.querySelector('.habit-check').addEventListener('click', () => toggleHabit(habit.id));
       div.querySelector('.habit-delete').addEventListener('click', () => deleteHabit(habit.id));
 
+      renderHeatmap(div.querySelector('.habit-heatmap'), habit);
+
       wrap.appendChild(div);
     });
 
     empty.classList.toggle('hidden', state.habits.length > 0);
     updateTodayDate();
+  }
+
+  // 26-week heatmap (≈ 6 months) similar in spirit to GitHub's contribution graph.
+  // - Columns are weeks (oldest -> newest, left -> right).
+  // - Rows are days of the week (top = Sunday by default).
+  // The most recent column ends with today; cells beyond today are rendered as
+  // empty spacers so the layout stays anchored to the current weekday.
+  function renderHeatmap(container, habit) {
+    const WEEKS = 26;
+    const DAYS = 7;
+    const set = new Set(habit.history);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Find the Sunday of the current week (last column's anchor).
+    const lastColAnchor = new Date(today);
+    lastColAnchor.setDate(today.getDate() - today.getDay()); // back to Sunday
+
+    // First column starts (WEEKS - 1) weeks before lastColAnchor.
+    const firstColAnchor = new Date(lastColAnchor);
+    firstColAnchor.setDate(firstColAnchor.getDate() - (WEEKS - 1) * 7);
+
+    container.innerHTML = '';
+    const grid = document.createElement('div');
+    grid.className = 'heatmap-grid';
+    grid.style.gridTemplateColumns = `repeat(${WEEKS}, 1fr)`;
+
+    let monthLabelsRow = '';
+    let lastMonth = -1;
+
+    for (let w = 0; w < WEEKS; w++) {
+      const weekStart = new Date(firstColAnchor);
+      weekStart.setDate(firstColAnchor.getDate() + w * 7);
+
+      // month label: only when this week starts a new month
+      const wsMonth = weekStart.getMonth();
+      if (wsMonth !== lastMonth) {
+        monthLabelsRow += `<span class="heatmap-month" style="grid-column:${w + 1}">${weekStart.toLocaleDateString(state.lang === 'ar' ? 'ar' : 'en-US', { month: 'short' })}</span>`;
+        lastMonth = wsMonth;
+      } else {
+        monthLabelsRow += `<span class="heatmap-month-empty" style="grid-column:${w + 1}"></span>`;
+      }
+
+      for (let d = 0; d < DAYS; d++) {
+        const day = new Date(weekStart);
+        day.setDate(weekStart.getDate() + d);
+        const cell = document.createElement('span');
+        cell.className = 'heatmap-cell';
+        cell.style.gridColumn = String(w + 1);
+        cell.style.gridRow = String(d + 1);
+
+        if (day > today) {
+          cell.classList.add('heatmap-empty');
+        } else {
+          const k = todayKey(day);
+          const isDone = set.has(k);
+          if (isDone) cell.classList.add('heatmap-done');
+          if (k === todayKey()) cell.classList.add('heatmap-today');
+          cell.title = `${day.toLocaleDateString(state.lang === 'ar' ? 'ar' : 'en-US')} — ${isDone ? '✓' : '·'}`;
+          // Click to toggle that specific day
+          cell.addEventListener('click', () => toggleHabitDay(habit.id, k));
+        }
+        grid.appendChild(cell);
+      }
+    }
+
+    // Months bar (above grid)
+    const months = document.createElement('div');
+    months.className = 'heatmap-months';
+    months.style.gridTemplateColumns = `repeat(${WEEKS}, 1fr)`;
+    months.innerHTML = monthLabelsRow;
+
+    // Legend
+    const legend = document.createElement('div');
+    legend.className = 'heatmap-legend';
+    legend.innerHTML = `
+      <span>${t('heatmap_less')}</span>
+      <span class="heatmap-cell heatmap-empty"></span>
+      <span class="heatmap-cell heatmap-done"></span>
+      <span>${t('heatmap_more')}</span>
+    `;
+
+    container.appendChild(months);
+    container.appendChild(grid);
+    container.appendChild(legend);
+  }
+
+  function toggleHabitDay(habitId, dateKey) {
+    const habit = state.habits.find((x) => x.id === habitId);
+    if (!habit) return;
+    const idx = habit.history.indexOf(dateKey);
+    if (idx === -1) habit.history.push(dateKey);
+    else habit.history.splice(idx, 1);
+    saveState();
+    renderHabits();
+    renderStats();
   }
 
   function updateTodayDate() {
@@ -951,7 +1221,8 @@
       if (!confirm(t('reset_confirm'))) return;
       const lang = state.lang;
       const theme = state.theme;
-      state = { ...defaultState, lang, theme };
+      const notificationsEnabled = state.notificationsEnabled;
+      state = { ...defaultState, lang, theme, notificationsEnabled };
       saveState();
       renderTasks();
       renderHabits();
@@ -988,19 +1259,12 @@
 
   // ------------------------------ PWA -------------------------------
   function setupPWA() {
-    // Register service worker
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('service-worker.js').then((reg) => {
-          // optional: detect first install
-          if (!navigator.serviceWorker.controller && reg.active) {
-            // existing controller already
-          }
-        }).catch(() => {/* ignore */});
+        navigator.serviceWorker.register('service-worker.js').catch(() => {/* ignore */});
       });
     }
 
-    // Install prompt (Android/Chrome)
     let deferredPrompt = null;
     const installBtn = $('#install-btn');
 
@@ -1039,6 +1303,7 @@
     setupBackup();
     setupReset();
     setupToggles();
+    setupNotifButton();
     setupPWA();
 
     renderTasks();
